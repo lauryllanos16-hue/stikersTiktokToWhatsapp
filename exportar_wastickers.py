@@ -30,6 +30,10 @@ LIM_PNG = 100 * 1024
 log = print
 
 
+def progreso(actual, total, texto=""):
+    """Gancho de avance: la ventana lo reemplaza para mostrar la barra."""
+
+
 def transparencia_intacta(original: Image.Image, datos_png: bytes) -> bool:
     """Comprueba que el PNG conserva la transparencia del original."""
     resultado = Image.open(io.BytesIO(datos_png)).convert("RGBA").getchannel("A")
@@ -70,6 +74,8 @@ def main():
     for viejo in OUT.glob("*.wastickers"):
         viejo.unlink()
     generados = 0
+    total = sum(len(p["stickers"]) for p in datos["sticker_packs"])
+    hecho = 0
     for p in datos["sticker_packs"]:
         carpeta = PACKS / p["identifier"]
         animado = bool(p.get("animated_sticker_pack", False))
@@ -81,6 +87,8 @@ def main():
             z.writestr("author.txt", p["publisher"] + "\n")
             z.writestr("title.txt", p["name"] + "\n")
             for s in p["stickers"]:
+                hecho += 1
+                progreso(hecho, total, "Empaquetando para WhatsApp")
                 f = carpeta / s["image_file"]
                 if animado:
                     z.write(f, f"{f.stem}.webp")

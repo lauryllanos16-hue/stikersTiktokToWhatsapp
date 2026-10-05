@@ -34,6 +34,13 @@ EMOJI = ["😀"]  # WhatsApp exige 1 a 3 emojis por sticker
 log = print
 
 
+def progreso(actual, total, texto=""):
+    """Gancho de avance: la ventana lo reemplaza para mostrar la barra."""
+
+
+_avance = {"hecho": 0, "total": 0}
+
+
 def duraciones_webp(ruta) -> list:
     """Duracion (ms) de cada frame de un WebP animado, leida de los bloques ANMF."""
     datos = Path(ruta).read_bytes()
@@ -117,6 +124,9 @@ def crear_packs(archivos, animado: bool, packs_json: list):
             img = Image.open(origen)
             ok = guardar_animado(img, carpeta / nombre, origen) if animado \
                 else guardar_estatico(img, carpeta / nombre)
+            _avance["hecho"] += 1
+            progreso(_avance["hecho"], _avance["total"],
+                     "Convirtiendo animados" if animado else "Convirtiendo estáticos")
             if not ok:
                 log(f"  ! {origen.name} no cabe en el limite, se omite")
                 (carpeta / nombre).unlink(missing_ok=True)
@@ -171,6 +181,12 @@ def main():
         shutil.rmtree(OUT)
     OUT.mkdir(exist_ok=True)
     packs_json = []
+    # Total de stickers que se van a convertir (solo los que forman packs completos).
+    total = 0
+    for lista in (estaticos, animados):
+        resto = len(lista) % POR_PACK
+        total += len(lista) - (resto if 0 < resto < MIN_POR_PACK else 0)
+    _avance["hecho"], _avance["total"] = 0, total
     crear_packs(estaticos, False, packs_json)
     crear_packs(animados, True, packs_json)
 

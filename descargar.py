@@ -27,6 +27,10 @@ MIN_BYTES = 3000
 log = print
 
 
+def progreso(actual, total, texto=""):
+    """Gancho de avance: la ventana lo reemplaza para mostrar la barra."""
+
+
 def esperar():
     input("Pulsa Enter cuando veas los mensajes del chat... ")
 
@@ -258,6 +262,8 @@ def descargar(rondas: int = 60, paciencia: int = 6, navegador: str = "chrome"):
                     recolectar_dom()
                     sin_nuevos = 0 if estado["nuevos"] > antes else sin_nuevos + 1
                     log(f"Ronda {i}: {estado['nuevos']} stickers nuevos en total")
+                    progreso(None, None,
+                             f"Buscando stickers · ronda {i} · {estado['nuevos']} nuevos")
                     if sin_nuevos >= paciencia:
                         log("No aparecen más stickers, terminé.")
                         break
@@ -273,6 +279,8 @@ def descargar(rondas: int = 60, paciencia: int = 6, navegador: str = "chrome"):
     animados = sum(1 for f in archivos if es_animado(f.read_bytes()))
     log(f"\nListo. Nuevos: {estado['nuevos']}. Total en {RAW}/: {len(archivos)} "
         f"({animados} animados, {len(archivos) - animados} estaticos)")
+    return {"nuevos": estado["nuevos"], "total": len(archivos), "animados": animados,
+            "estaticos": len(archivos) - animados}
 
 
 def main():

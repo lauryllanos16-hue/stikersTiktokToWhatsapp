@@ -59,6 +59,8 @@ class App(tk.Tk):
         # Conectar los scripts con la ventana
         for modulo in (descargar, convertir, exportar_wastickers, validar_packs):
             modulo.log = self.escribir_desde_hilo
+        for modulo in (descargar, convertir, exportar_wastickers):
+            modulo.progreso = self._progreso_desde_hilo
         descargar.esperar = self._esperar_boton
         descargar.parar = self.evento_parar.is_set
 
@@ -131,6 +133,10 @@ class App(tk.Tk):
 
         marco_log = ttk.LabelFrame(self, text=" Progreso ", padding=6)
         marco_log.pack(fill="both", expand=True, **pad)
+        self.lbl_progreso = ttk.Label(marco_log, text="")
+        self.lbl_progreso.pack(fill="x")
+        self.barra = ttk.Progressbar(marco_log, mode="determinate")
+        self.barra.pack(fill="x", pady=(2, 6))
         self.caja = scrolledtext.ScrolledText(marco_log, height=10, state="disabled",
                                               font=("Consolas", 9), wrap="word")
         self.caja.pack(fill="both", expand=True)
@@ -154,8 +160,10 @@ class App(tk.Tk):
                     self.escribir(evento[1])
                 elif evento[0] == "esperar":
                     self.btn_listo.configure(state="normal")
+                elif evento[0] == "progreso":
+                    self._aplicar_progreso(evento[1], evento[2], evento[3])
                 elif evento[0] == "fin":
-                    self._al_terminar(evento[1], evento[2])
+                    self._al_terminar(evento[1], evento[2], evento[3])
         except queue.Empty:
             pass
         self.after(100, self._vaciar_cola)
@@ -172,11 +180,16 @@ class App(tk.Tk):
         self.btn_instalar.configure(state="disabled")
         self.combo_nav.configure(state="disabled")
         self.btn_parar.configure(state="normal" if con_parar else "disabled")
+        textos = {"descargar": "Descargando stickers...",
+                  "convertir": "Preparando la conversión...",
+                  "instalar": "Instalando Firefox..."}
+        self._iniciar_barra(nombre != "convertir", textos.get(nombre, "Trabajando..."))
 
         def tarea():
             ok = True
+            resultado = None
             try:
-                funcion()
+                resultado = funcion()
             except SystemExit as e:
                 ok = False
                 self.escribir_desde_hilo(f"⚠ {e}")
@@ -187,22 +200,83 @@ class App(tk.Tk):
                     f"✖ Error: {type(e).__name__}: {e}\n"
                     f"  (detalle completo en el archivo error.log)")
             finally:
-                self.cola.put(("fin", nombre, ok))
+                self.cola.put(("fin", nombre, ok, resultado))
 
         self.hilo = threading.Thread(target=tarea, daemon=True)
         self.hilo.start()
 
-    def _al_terminar(self, nombre: str, ok: bool):
+    def _al_terminar(self, nombre: str, ok: bool, resultado=None):
+        self._detener_barra()
         self.btn_descargar.configure(state="normal")
         self.btn_convertir.configure(state="normal")
         self.btn_instalar.configure(state="normal")
         self.combo_nav.configure(state="readonly")
         self.btn_listo.configure(state="disabled")
         self.btn_parar.configure(state="disabled")
-        if nombre == "convertir" and ok:
-            if messagebox.askyesno("Listo", "Los archivos .wastickers están listos.\n\n"
+
+        if nombre == "descargar" and ok and resultado and not self.evento_parar.is_set():
+            self._traer_al_frente()
+            r = resultado
+            resumen = (f"Total guardados: {r['total']} "
+                       f"({r['animados']} animados, {r['estaticos']} estáticos)")
+            if r["nuevos"]:
+                texto = (f"Descarga terminada.\n\nStickers nuevos: {r['nuevos']}\n{resumen}\n\n"
+                         "Siguiente: Paso 2, «Convertir y crear archivos .wastickers».")
+            else:
+                texto = f"La descarga terminó, pero no encontré stickers nuevos.\n\n{resumen}"
+            messagebox.showinfo("Descarga terminada", texto)
+        elif nombre == "convertir" and ok:
+            self._traer_al_frente()
+            n = len(list(CARPETA_WASTICKERS.glob("*.wastickers")))
+            if messagebox.askyesno("Listo", f"Se crearon {n} archivo(s) .wastickers.\n\n"
                                             "¿Abrir la carpeta?"):
                 abrir_carpeta(CARPETA_WASTICKERS)
+        elif nombre == "instalar" and ok:
+            self._traer_al_frente()
+            messagebox.showinfo("Firefox instalado",
+                                "Firefox quedó listo. Ya puedes elegirlo en la lista de navegadores.")
+
+    # ---------- barra de progreso y avisos ----------
+    def _progreso_desde_hilo(self, actual, total, texto=""):
+        self.cola.put(("progreso", actual, total, texto))
+
+    def _iniciar_barra(self, indeterminada: bool, texto: str):
+        self.barra.stop()
+        self.lbl_progreso.configure(text=texto)
+        if indeterminada:
+            self.barra.configure(mode="indeterminate")
+            self.barra.start(12)
+        else:
+            self.barra.configure(mode="determinate", maximum=100, value=0)
+
+    def _detener_barra(self):
+        self.barra.stop()
+        self.barra.configure(mode="determinate", value=0)
+        self.lbl_progreso.configure(text="")
+
+    def _aplicar_progreso(self, actual, total, texto):
+        if total:
+            if str(self.barra.cget("mode")) != "determinate":
+                self.barra.stop()
+                self.barra.configure(mode="determinate")
+            self.barra.configure(maximum=total, value=actual)
+            self.lbl_progreso.configure(text=f"{texto}: {actual} de {total}")
+        else:
+            if str(self.barra.cget("mode")) != "indeterminate":
+                self.barra.configure(mode="indeterminate")
+                self.barra.start(12)
+            self.lbl_progreso.configure(text=texto)
+
+    def _traer_al_frente(self):
+        """Sube la ventana por encima del navegador u otras ventanas."""
+        try:
+            self.deiconify()
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(400, lambda: self.attributes("-topmost", False))
+            self.focus_force()
+        except tk.TclError:
+            pass
 
     # ---------- paso 1 ----------
     def _nav_elegido(self) -> str:
