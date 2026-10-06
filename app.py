@@ -47,7 +47,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Stickers de TikTok a WhatsApp")
-        self.geometry("780x640")
+        self.geometry("780x720")
         self.minsize(640, 520)
 
         self.cola = queue.Queue()
@@ -93,6 +93,16 @@ class App(tk.Tk):
         self.btn_instalar.pack(side="left")
         ttk.Label(fila_nav, text="(Firefox necesita una descarga extra la primera vez)",
                   foreground="#666666").pack(side="left", padx=8)
+
+        fila_marca = ttk.Frame(paso1)
+        fila_marca.pack(fill="x", pady=(8, 0))
+        ttk.Label(fila_marca, text="Mensaje de corte:").pack(side="left")
+        self.var_marca = tk.StringVar(value=self._cargar_config().get("marca", "##corte##"))
+        self.entry_marca = ttk.Entry(fila_marca, textvariable=self.var_marca, width=22)
+        self.entry_marca.pack(side="left", padx=8)
+        ttk.Label(fila_marca, foreground="#666666",
+                  text="(se detiene aquí; vacío = bajar todo)"
+                  ).pack(side="left")
 
         fila = ttk.Frame(paso1)
         fila.pack(fill="x", pady=(8, 0))
@@ -179,6 +189,7 @@ class App(tk.Tk):
         self.btn_convertir.configure(state="disabled")
         self.btn_instalar.configure(state="disabled")
         self.combo_nav.configure(state="disabled")
+        self.entry_marca.configure(state="disabled")
         self.btn_parar.configure(state="normal" if con_parar else "disabled")
         textos = {"descargar": "Descargando stickers...",
                   "convertir": "Preparando la conversión...",
@@ -211,6 +222,7 @@ class App(tk.Tk):
         self.btn_convertir.configure(state="normal")
         self.btn_instalar.configure(state="normal")
         self.combo_nav.configure(state="readonly")
+        self.entry_marca.configure(state="normal")
         self.btn_listo.configure(state="disabled")
         self.btn_parar.configure(state="disabled")
 
@@ -220,10 +232,18 @@ class App(tk.Tk):
             resumen = (f"Total guardados: {r['total']} "
                        f"({r['animados']} animados, {r['estaticos']} estáticos)")
             if r["nuevos"]:
-                texto = (f"Descarga terminada.\n\nStickers nuevos: {r['nuevos']}\n{resumen}\n\n"
-                         "Siguiente: Paso 2, «Convertir y crear archivos .wastickers».")
+                texto = f"Descarga terminada.\n\nStickers nuevos: {r['nuevos']}\n{resumen}"
             else:
                 texto = f"La descarga terminó, pero no encontré stickers nuevos.\n\n{resumen}"
+            if r.get("marca"):
+                if r["marca_hallada"]:
+                    texto += f"\n\nMe detuve en el mensaje de corte «{r['marca']}»."
+                else:
+                    texto += (f"\n\nNo encontré el mensaje de corte «{r['marca']}» en el chat, "
+                              "así que bajé todo lo disponible.")
+                texto += (f"\n\nIMPORTANTE: manda ahora «{r['marca']}» al chat para marcar "
+                          "hasta dónde llegaste. La próxima vez la app se detendrá ahí.")
+            texto += "\n\nSiguiente: Paso 2, «Convertir y crear archivos .wastickers»."
             messagebox.showinfo("Descarga terminada", texto)
         elif nombre == "convertir" and ok:
             self._traer_al_frente()
@@ -287,9 +307,11 @@ class App(tk.Tk):
 
     def _iniciar_descarga(self):
         nav = self._nav_elegido()
-        self._guardar_config({"navegador": nav})
+        marca = self.var_marca.get().strip()
+        self._guardar_config({"navegador": nav, "marca": marca})
         self.escribir(f"\n--- Descargando stickers ({NOMBRES_NAV[nav]}) ---")
-        self._correr("descargar", lambda: descargar.descargar(navegador=nav), con_parar=True)
+        self._correr("descargar",
+                     lambda: descargar.descargar(navegador=nav, marca=marca), con_parar=True)
 
     def _iniciar_instalacion_firefox(self):
         self.escribir("\n--- Instalando Firefox para la app ---")
